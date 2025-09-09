@@ -16,6 +16,7 @@ model:
     resid_pd: 0.0
     kernel_size: 1
     padding_size: 0
+    classifier_sample_iters: 5
 
 classifier:
   target: Models.interpretable_diffusion.classifier.Classifier
@@ -38,7 +39,7 @@ classifier:
     num_head_channels: 23
 
 solver:
-  base_lr: 1.0e-6
+  base_lr: 1.0e-5
   classifier_lr: 1.0e-6
   max_epochs_diff: 12000
   max_epochs_classifier: 3000

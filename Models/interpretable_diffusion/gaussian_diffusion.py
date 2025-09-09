@@ -53,6 +53,7 @@ class Diffusion_TS(nn.Module):
             padding_size=None,
             use_ff=True,
             reg_weight=None,
+            classifier_sample_iters=1,
             **kwargs
     ):
         super(Diffusion_TS, self).__init__()
@@ -85,6 +86,7 @@ class Diffusion_TS(nn.Module):
 
         self.sampling_timesteps = default(
             sampling_timesteps, timesteps)  # default num sampling timesteps to number of timesteps at training
+        self.classifier_sample_iters = classifier_sample_iters
 
         assert self.sampling_timesteps <= timesteps
         self.fast_sampling = self.sampling_timesteps < timesteps
@@ -424,8 +426,13 @@ class Diffusion_TS(nn.Module):
 
         This uses the conditioning strategy from Sohl-Dickstein et al. (2015).
         """
-        
-        gradient = cond_fn(x=x, t=t, **model_kwargs)
+        cond_fn.train()
+        gradient = cond_fn(x=x,t=t,**model_kwargs)
+        for i in range(self.classifier_sample_iters - 1):
+            gradient += cond_fn(x=x, t=t, **model_kwargs)
+
+        gradient = gradient / self.classifier_sample_iters
+    
         new_mean = (
             mean.float() + torch.exp(log_variance) * gradient.float()
         )
