@@ -31,8 +31,45 @@ class PositionalEmbedding(nn.Module):
 
     def forward(self, x):
         return self.pe[:, : x.size(1)]
+    
+class RotaryPositionalEmbedding(nn.Module):
+    def __init__(self, d_model, max_seq_len = 5000):
+        super(RotaryPositionalEmbedding, self).__init__()
+
+        # Create a rotation matrix.
+        rotation_matrix = torch.zeros(d_model, d_model).float()
+        rotation_matrix.require_grad = False
+        for i in range(d_model):
+            for j in range(d_model):
+                rotation_matrix[i, j] = torch.cos(torch.tensor(i * j * 0.01))
+
+        # Create a positional embedding matrix.
+        positional_embedding = torch.zeros(max_seq_len, d_model).float()
+        positional_embedding.requires_grad = False
+        for i in range(max_seq_len):
+            for j in range(d_model):
+                positional_embedding[i, j] = torch.cos(torch.tensor(i * j * 0.01))
+
+        self.register_buffer("rotation_matrix",rotation_matrix)
+        self.register_buffer("positional_embedding",positional_embedding)
 
 
+    def forward(self, x):
+        """
+        Args:
+            x: A tensor of shape (batch_size, seq_len, d_model).
+
+        Returns:
+            A tensor of shape (batch_size, seq_len, d_model).
+        """
+        # Add the positional embedding to the input tensor.
+        x += self.positional_embedding[:x.size(1),:]
+
+        # Apply the rotation matrix to the input tensor.
+        x = torch.matmul(x, self.rotation_matrix)
+
+        return x
+    
 class TokenEmbedding(nn.Module):  # (batch_size, seq_len, enc_in)
     def __init__(self, c_in, d_model):
         super(TokenEmbedding, self).__init__()
@@ -299,8 +336,8 @@ class TokenChannelEmbedding(nn.Module):
         ]
         self.value_embeddings_t = nn.ModuleList(linear_layers_t)
         self.value_embeddings_c = nn.ModuleList(linear_layers_c)
-        self.position_embedding_t = PositionalEmbedding(d_model=d_model)
-        self.position_embedding_c = PositionalEmbedding(d_model=seq_len)
+        self.position_embedding_t = RotaryPositionalEmbedding(d_model=d_model)
+        self.position_embedding_c = RotaryPositionalEmbedding(d_model=seq_len)
         self.dropout = nn.Dropout(dropout)
         self.augmentation = nn.ModuleList(
             [get_augmentation(aug) for aug in augmentation]
@@ -312,11 +349,6 @@ class TokenChannelEmbedding(nn.Module):
         self.learnable_embeddings_c = nn.ParameterList(
             [nn.Parameter(torch.randn(1, d_model)) for _ in self.up_dim_list]
         )
-
-        print(len(self.learnable_embeddings_c))
-        print(len(self.learnable_embeddings_t))
-        print(len(linear_layers_c))
-        print(len(linear_layers_t))
 
 
     def forward(self, x):  # (batch_size, seq_len, enc_in)
@@ -341,13 +373,13 @@ class TokenChannelEmbedding(nn.Module):
             #aug_idx = random.randint(0, len(self.augmentation) - 1)
             x_new_c = x_copy
             # add positional embedding to tag each channel
-            x_new_c = x_new_c + self.position_embedding_c(x_new_c)
+            x_new_c = self.position_embedding_c(x_new_c)
             # channel dimension
             x_new_c = value_embedding_c(x_new_c)  # (batch_size, enc_in, d_model)
             x_list_c.append(x_new_c)
 
         x_t = [
-            x + cxt + self.position_embedding_t(x)
+            self.position_embedding_t(x) + cxt
             for x, cxt in zip(x_list_t, self.learnable_embeddings_t)
         ]  # (batch_size, patch_num_1, d_model), (batch_size, patch_num_2, d_model), ...
         x_c = [

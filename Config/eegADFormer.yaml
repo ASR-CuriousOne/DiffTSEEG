@@ -39,6 +39,7 @@ classifier:
 
 solver:
   base_lr: 1.0e-6
+  classifier_lr: 1.0e-6
   max_epochs_diff: 12000
   max_epochs_classifier: 3000
   results_folder: ./Checkpoints_eeg

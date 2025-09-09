@@ -41,6 +41,7 @@ class Trainer(object):
         os.makedirs(self.results_folder, exist_ok=True)
 
         start_lr = config['solver'].get('base_lr', 1.0e-4)
+        self.classifier_lr = config['solver'].get('classifier_lr',1.0e-4)
         ema_decay = config['solver']['ema']['decay']
         ema_update_every = config['solver']['ema']['update_interval']
 
@@ -206,7 +207,7 @@ class Trainer(object):
         dataloader = cycle(dataloader)
 
         self.classifier = classifier
-        self.opt_classifier = Adam(filter(lambda p: p.requires_grad, self.classifier.parameters()), lr=1.0e-4)
+        self.opt_classifier = Adam(filter(lambda p: p.requires_grad, self.classifier.parameters()), lr=self.classifier_lr)
         
         if self.logger is not None:
             tic = time.time()
