@@ -2,3 +2,4 @@ Data/datasets/*/**/
 __pycache__
 Saved
 Checkpoints*
+Syn*

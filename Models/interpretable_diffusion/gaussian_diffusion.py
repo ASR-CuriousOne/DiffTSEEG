@@ -424,7 +424,6 @@ class Diffusion_TS(nn.Module):
 
         This uses the conditioning strategy from Sohl-Dickstein et al. (2015).
         """
-        
         gradient = cond_fn(x=x, t=t, **model_kwargs)
         new_mean = (
             mean.float() + torch.exp(log_variance) * gradient.float()

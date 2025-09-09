@@ -37,24 +37,16 @@ class RotaryPositionalEmbedding(nn.Module):
         super(RotaryPositionalEmbedding, self).__init__()
 
         # Create a rotation matrix.
-        rotation_matrix = torch.zeros(d_model, d_model).float()
-        rotation_matrix.require_grad = False
-        for i in range(d_model):
-            for j in range(d_model):
-                rotation_matrix[i, j] = torch.cos(torch.tensor(i * j * 0.01))
+        super().__init__()
+        self.d_model = d_model
+        self.max_len = max_seq_len
 
-        # Create a positional embedding matrix.
-        positional_embedding = torch.zeros(max_seq_len, d_model).float()
-        positional_embedding.requires_grad = False
-        for i in range(max_seq_len):
-            for j in range(d_model):
-                positional_embedding[i, j] = torch.cos(torch.tensor(i * j * 0.01))
-
-        self.register_buffer("rotation_matrix",rotation_matrix)
-        self.register_buffer("positional_embedding",positional_embedding)
+        inv_freq = 1.0 / (10000 ** (torch.arange(0, d_model, 2).float() / d_model))
+        self.register_buffer("inv_freq", inv_freq)
+        self.max_len_cached = max_seq_len
 
 
-    def forward(self, x):
+    def forward(self, x,seq_len=None):
         """
         Args:
             x: A tensor of shape (batch_size, seq_len, d_model).
@@ -62,13 +54,26 @@ class RotaryPositionalEmbedding(nn.Module):
         Returns:
             A tensor of shape (batch_size, seq_len, d_model).
         """
-        # Add the positional embedding to the input tensor.
-        x += self.positional_embedding[:x.size(1),:]
 
-        # Apply the rotation matrix to the input tensor.
-        x = torch.matmul(x, self.rotation_matrix)
+        if seq_len is None:
+            seq_len = x.shape[1]
 
-        return x
+        t = torch.arange(seq_len, device=x.device).type_as(self.inv_freq)
+        freqs = torch.einsum('i,j->ij', t, self.inv_freq)
+
+        x_reshaped = x.float().reshape(*x.shape[:-1], -1, 2)
+
+        cos = freqs.cos()
+        sin = freqs.sin()
+
+        cos_rot = cos.view(1, seq_len, -1, 1).expand_as(x_reshaped)
+        sin_rot = sin.view(1, seq_len, -1, 1).expand_as(x_reshaped)
+
+        x_rotated = torch.stack([-x_reshaped[..., 1], x_reshaped[..., 0]], dim=-1)
+
+        x_rot = x_reshaped * cos_rot + x_rotated * sin_rot
+     
+        return x_rot.flatten(start_dim=2)
     
 class TokenEmbedding(nn.Module):  # (batch_size, seq_len, enc_in)
     def __init__(self, c_in, d_model):
