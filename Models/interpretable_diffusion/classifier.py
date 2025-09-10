@@ -5,7 +5,6 @@ import torch.nn.functional as F
 from torch import nn
 from Models.interpretable_diffusion.model_utils import LearnablePositionalEncoding, Conv_MLP,\
                                                        AdaLayerNorm, GELU2
-from Models.interpretable_diffusion.Embed import TokenChannelEmbedding
 
 
 class GroupNorm32(nn.GroupNorm):
@@ -20,7 +19,7 @@ def normalization(channels):
     :param channels: number of input channels.
     :return: an nn.Module for normalization.
     """
-    return GroupNorm32(channels, channels)
+    return GroupNorm32(8, channels)
 
 
 def conv_nd(dims, *args, **kwargs):
@@ -206,11 +205,6 @@ class Classifier(nn.Module):
         self,
         feature_size,
         seq_length,
-        patch_len_list,
-        stride_list,
-        up_dim_list,
-        dropout,
-        augmentations,
         num_classes=2,
         n_layer_enc=5,
         n_embd=1024,
@@ -220,32 +214,13 @@ class Classifier(nn.Module):
         mlp_hidden_times=4,
         block_activate='GELU',
         max_len=2048,
-        num_head_channels=23,
+        num_head_channels=8,
         **kwargs
     ):
         super().__init__()
-        patch_len_list = list(map(int, patch_len_list.split(",")))
-        up_dim_list = list(map(int, up_dim_list.split(",")))
-        stride_list = patch_len_list
-        #self.test_emb = Conv_MLP(feature_size, n_embd, resid_pdrop=resid_pdrop)
-        self.emb = TokenChannelEmbedding(
-            feature_size,
-            seq_length,
-            n_embd,
-            patch_len_list,
-            up_dim_list,
-            stride_list,
-            dropout,
-            augmentations,
-        )
-
-        x_t,x_c = self.emb(torch.zeros((1,seq_length,feature_size)))
-        emb = torch.concatenate((*x_t,*x_c),dim=1)
-        print(emb.shape)
-        num_of_embeddings = emb.shape[1]
-        seq_length = num_of_embeddings
+        self.emb = Conv_MLP(feature_size, n_embd, resid_pdrop=resid_pdrop)
         self.encoder = Encoder(n_layer_enc, n_embd, n_heads, attn_pdrop, resid_pdrop, mlp_hidden_times, block_activate)
-        #self.pos_enc = LearnablePositionalEncoding(n_embd, dropout=resid_pdrop, max_len=seq_length)
+        self.pos_enc = LearnablePositionalEncoding(n_embd, dropout=resid_pdrop, max_len=max_len)
 
         assert num_head_channels != -1
         self.out = nn.Sequential(
@@ -255,21 +230,12 @@ class Classifier(nn.Module):
                 seq_length, num_head_channels, num_classes
             ),
         )
-        patch_num_list = [
-            int((seq_length - patch_len) / stride + 2)
-            for patch_len, stride in zip(patch_len_list, stride_list)
-        ]
-
-        self.act = F.gelu
-        self.dropout = nn.Dropout(dropout)
-        self.projection = nn.Linear(num_of_embeddings * n_embd,num_classes)
 
     def forward(self, input, t, padding_masks=None):
-        x_t,x_c = self.emb(input)
-        emb = torch.concatenate((*x_t,*x_c),dim=1)
-        #inp_enc = self.pos_enc(emb)
-        output = self.encoder(emb, t, padding_masks=padding_masks)
-        #print(output.shape)
+        emb = self.emb(input)
+        inp_enc = self.pos_enc(emb)
+        output = self.encoder(inp_enc, t, padding_masks=padding_masks)
+
         return self.out(output)
 
 

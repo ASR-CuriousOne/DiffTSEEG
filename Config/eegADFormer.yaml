@@ -35,7 +35,7 @@ classifier:
     attn_pd: 0.0
     resid_pd: 0.0
     max_len: 128 # seq_length
-    num_head_channels: 23
+    num_head_channels: 8
 
 solver:
   base_lr: 1.0e-6
